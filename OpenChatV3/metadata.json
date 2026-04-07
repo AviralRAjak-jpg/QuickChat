@@ -1,0 +1,5 @@
+{
+  "name": "QuickChat",
+  "description": "A high-performance, real-time chat application with AI-powered assistance and seamless Firebase integration.",
+  "requestFramePermissions": ["camera", "microphone"]
+}

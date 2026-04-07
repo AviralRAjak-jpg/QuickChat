@@ -1,0 +1,112 @@
+rules_version = '2';
+service cloud.firestore {
+  match /databases/{database}/documents {
+    // ===============================================================
+    // Assumed Data Model
+    // ===============================================================
+    // Collection: users
+    //   - uid: string (required)
+    //   - username: string (required)
+    //   - email: string (required)
+    //   - photoURL: string (optional)
+    //   - isOnline: bool (required)
+    //   - lastSeen: number (required)
+    //   - createdAt: timestamp (required)
+    //   - isPremium: bool (optional)
+    //   - aiUsageCount: number (optional)
+    //   - premiumTheme: string (optional)
+    //
+    // Collection: conversations
+    //   - id: string (required)
+    //   - type: string (required, 'private' | 'group')
+    //   - participants: list (required, strings)
+    //   - lastMessage: string (optional)
+    //   - lastMessageAt: timestamp (optional)
+    //   - lastMessageSenderId: string (optional)
+    //   - lastMessageStatus: string (optional, 'sent' | 'delivered' | 'seen')
+    //   - typing: map (optional, uid -> bool)
+    //   - unreadCount: map (optional, uid -> number)
+    //
+    // Collection: conversations/{convId}/messages
+    //   - id: string (required)
+    //   - senderId: string (required)
+    //   - text: string (required, max 5000 chars)
+    //   - timestamp: timestamp (required)
+    //   - status: string (required, 'sent' | 'delivered' | 'seen')
+    // ===============================================================
+
+    // Helper Functions
+    function isAuthenticated() {
+      return request.auth != null;
+    }
+
+    function isOwner(userId) {
+      return isAuthenticated() && request.auth.uid == userId;
+    }
+
+    function isParticipant(participants) {
+      return isAuthenticated() && request.auth.uid in participants;
+    }
+
+    function isAIConversation(convId) {
+      return 'ai-assistant' in get(/databases/$(database)/documents/conversations/$(convId)).data.participants;
+    }
+
+    // User Validation
+    function isValidUser(data) {
+      return data.keys().hasAll(['uid', 'username', 'email', 'isOnline', 'lastSeen', 'createdAt']) &&
+             data.uid is string && data.uid.size() > 0 &&
+             data.username is string && data.username.size() > 0 && data.username.size() < 50 &&
+             (!('username_lowercase' in data) || (data.username_lowercase is string && data.username_lowercase.size() < 50)) &&
+             data.email is string && data.email.matches("^[a-zA-Z0-9._%+-]+@[a-zA-Z0-9.-]+\\.[a-zA-Z]{2,}$") &&
+             (!('isPremium' in data) || data.isPremium is bool) &&
+             (!('aiUsageCount' in data) || data.aiUsageCount is number) &&
+             (!('premiumTheme' in data) || data.premiumTheme is string);
+    }
+
+    // Message Validation
+    function isValidMessage(data, convId) {
+      return data.keys().hasAll(['senderId', 'text', 'timestamp', 'status']) &&
+             (data.senderId == request.auth.uid || (data.senderId == 'ai-assistant' && isAIConversation(convId))) &&
+             data.text is string && data.text.size() > 0 && data.text.size() < 5000 &&
+             data.timestamp == request.time;
+    }
+
+    // Rules
+    match /users/{userId} {
+      // Allow reading own profile. For others, only allow if authenticated (to support search)
+      // but we should ideally split PII. For now, we restrict to authenticated users.
+      allow read: if isAuthenticated(); 
+      allow create: if isOwner(userId) && isValidUser(request.resource.data);
+      allow update: if isOwner(userId) && 
+                    isValidUser(request.resource.data) &&
+                    request.resource.data.diff(resource.data).affectedKeys().hasOnly(['isOnline', 'lastSeen', 'photoURL', 'bio', 'username', 'username_lowercase', 'isPremium', 'aiUsageCount', 'premiumTheme']);
+    }
+
+    match /conversations/{convId} {
+      allow read: if isParticipant(resource.data.participants);
+      allow create: if isAuthenticated() && isParticipant(request.resource.data.participants);
+      allow update: if isParticipant(resource.data.participants) && 
+                    (
+                      // Use hasOnly to prevent unauthorized field injection
+                      request.resource.data.diff(resource.data).affectedKeys().hasOnly(['typing', 'lastMessage', 'lastMessageAt', 'lastMessageSenderId', 'lastMessageStatus', 'unreadCount', 'isBlocked', 'blockedAt', 'blockedBy'])
+                    );
+
+      match /messages/{msgId} {
+        allow read: if isParticipant(get(/databases/$(database)/documents/conversations/$(convId)).data.participants);
+        allow create: if isParticipant(get(/databases/$(database)/documents/conversations/$(convId)).data.participants) && 
+                      isValidMessage(request.resource.data, convId);
+        allow update: if isParticipant(get(/databases/$(database)/documents/conversations/$(convId)).data.participants) &&
+                      request.resource.data.diff(resource.data).affectedKeys().hasOnly(['status']);
+        allow delete: if isParticipant(get(/databases/$(database)/documents/conversations/$(convId)).data.participants);
+      }
+    }
+
+    match /calls/{callId} {
+      allow read: if isAuthenticated() && (request.auth.uid == resource.data.callerId || request.auth.uid == resource.data.receiverId);
+      allow create: if isAuthenticated() && request.resource.data.callerId == request.auth.uid;
+      allow update: if isAuthenticated() && (request.auth.uid == resource.data.callerId || request.auth.uid == resource.data.receiverId);
+      allow delete: if isAuthenticated() && (request.auth.uid == resource.data.callerId || request.auth.uid == resource.data.receiverId);
+    }
+  }
+}

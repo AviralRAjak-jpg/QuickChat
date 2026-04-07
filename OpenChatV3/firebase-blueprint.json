@@ -1,0 +1,72 @@
+{
+  "entities": {
+    "users": {
+      "title": "User",
+      "description": "User profile and presence information",
+      "type": "object",
+      "properties": {
+        "uid": { "type": "string" },
+        "username": { "type": "string" },
+        "email": { "type": "string" },
+        "photoURL": { "type": "string" },
+        "isOnline": { "type": "boolean" },
+        "lastSeen": { "type": "number" },
+        "bio": { "type": "string" },
+        "status": { "type": "string" },
+        "createdAt": { "type": "object" },
+        "isPremium": { "type": "boolean" },
+        "aiUsageCount": { "type": "number" },
+        "premiumTheme": { "type": "string" }
+      },
+      "required": ["uid", "username", "email"]
+    },
+    "conversations": {
+      "title": "Conversation",
+      "description": "A chat session between two or more users",
+      "type": "object",
+      "properties": {
+        "id": { "type": "string" },
+        "type": { "type": "string", "enum": ["private", "group"] },
+        "participants": { "type": "array", "items": { "type": "string" } },
+        "name": { "type": "string" },
+        "lastMessage": { "type": "string" },
+        "lastMessageAt": { "type": "object" },
+        "lastMessageSenderId": { "type": "string" },
+        "lastMessageStatus": { "type": "string", "enum": ["sent", "delivered", "seen"] },
+        "unreadCount": { "type": "object" },
+        "typing": { "type": "object" }
+      },
+      "required": ["id", "type", "participants"]
+    },
+    "messages": {
+      "title": "Message",
+      "description": "A single message within a conversation",
+      "type": "object",
+      "properties": {
+        "id": { "type": "string" },
+        "conversationId": { "type": "string" },
+        "senderId": { "type": "string" },
+        "senderName": { "type": "string" },
+        "text": { "type": "string" },
+        "timestamp": { "type": "object" },
+        "type": { "type": "string", "enum": ["text", "image", "file"] },
+        "status": { "type": "string", "enum": ["sent", "delivered", "seen"] }
+      },
+      "required": ["id", "conversationId", "senderId", "text", "timestamp"]
+    }
+  },
+  "firestore": {
+    "/users/{userId}": {
+      "schema": "users",
+      "description": "User profiles"
+    },
+    "/conversations/{conversationId}": {
+      "schema": "conversations",
+      "description": "Chat conversations"
+    },
+    "/conversations/{conversationId}/messages/{messageId}": {
+      "schema": "messages",
+      "description": "Messages within a conversation"
+    }
+  }
+}
